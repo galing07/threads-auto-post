@@ -1,66 +1,133 @@
 from bs4 import BeautifulSoup
 import aiohttp
 
+
 async def getnews(url):
     """
-    Mengambil isi artikel berita dari URL yang diberikan.
+    Mengambil isi artikel dari URL berita.
+    Mengembalikan list berisi isi artikel.
     """
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as inner_response:
 
-            if inner_response.status == 200:
-                inner_html = await inner_response.text()
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/137.0.0.0 Safari/537.36"
+            )
+        }
 
-                soup = BeautifulSoup(inner_html, 'html.parser')
-                articles = soup.find_all('article')
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=30) as response:
 
-                hasil_artikel = []
+                if response.status != 200:
+                    print(f"Gagal mengambil halaman. Status: {response.status}")
+                    return ["Gagal membaca berita"]
+
+                html = await response.text()
+
+                soup = BeautifulSoup(html, "html.parser")
+
+                articles = soup.find_all("article")
+
+                hasil = []
 
                 for article in articles:
-                    isi_artikel = article.text.strip()
+                    teks = article.get_text(separator="\n").strip()
 
-                    # Menghapus teks iklan bawaan situs
-                    hapus_teks = "我是廣告 請繼續往下閱讀"
-                    isi_artikel = isi_artikel.replace(hapus_teks, "")
+                    # Hapus teks iklan yang sering muncul
+                    daftar_hapus = [
+                        "我是廣告 請繼續往下閱讀",
+                        "Advertisement",
+                        "Iklan",
+                        "Baca Juga",
+                    ]
 
-                    # Menghapus baris kosong
-                    lines = isi_artikel.splitlines()
-                    isi_artikel = '\n'.join(
-                        line for line in lines if line.strip()
-                    )
+                    for item in daftar_hapus:
+                        teks = teks.replace(item, "")
 
-                    hasil_artikel.append(isi_artikel)
+                    # Hapus baris kosong
+                    lines = [
+                        line.strip()
+                        for line in teks.splitlines()
+                        if line.strip()
+                    ]
 
-                return hasil_artikel
+                    teks_bersih = "\n".join(lines)
 
-            else:
-                print(f"Gagal mengambil halaman. Status kode: {inner_response.status}")
-                return ["Gagal membaca berita"]
+                    if teks_bersih:
+                        hasil.append(teks_bersih)
+
+                # Jika tag article tidak ditemukan
+                if not hasil:
+                    body = soup.get_text(separator="\n")
+
+                    lines = [
+                        line.strip()
+                        for line in body.splitlines()
+                        if line.strip()
+                    ]
+
+                    teks_bersih = "\n".join(lines[:300])
+
+                    return [teks_bersih]
+
+                return hasil
+
+    except Exception as e:
+        print(f"Terjadi kesalahan saat membaca berita: {e}")
+        return ["Gagal membaca berita"]
 
 
 async def setn_fetch_url(url):
     """
     Mengambil URL berita terbaru dari halaman kategori SETN.
     """
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
 
-            if response.status == 200:
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/137.0.0.0 Safari/537.36"
+            )
+        }
+
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=30) as response:
+
+                if response.status != 200:
+                    print(f"Gagal memuat halaman: {response.status}")
+                    return None
+
                 html = await response.text()
 
-                soup = BeautifulSoup(html, 'html.parser')
+                soup = BeautifulSoup(html, "html.parser")
 
-                title_block = soup.find('h3', class_='view-li-title')
+                # Cari berita terbaru
+                title_block = soup.find("h3", class_="view-li-title")
 
-                if title_block:
-                    a_tag = title_block.find('a')
+                if not title_block:
+                    print("Judul berita tidak ditemukan.")
+                    return None
 
-                    if a_tag:
-                        href = a_tag['href']
-                        return href
+                a_tag = title_block.find("a")
 
-                return None
+                if not a_tag:
+                    print("Link berita tidak ditemukan.")
+                    return None
 
-            else:
-                print(f"Gagal memuat halaman: {response.status}")
-                return None
+                href = a_tag.get("href")
+
+                if not href:
+                    return None
+
+                # Jika URL relatif
+                if href.startswith("/"):
+                    href = f"https://www.setn.com{href}"
+
+                return href
+
+    except Exception as e:
+        print(f"Terjadi kesalahan saat mengambil URL berita: {e}")
+        return None
